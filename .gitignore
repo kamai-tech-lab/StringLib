@@ -26,7 +26,21 @@
 *.a
 *.lib
 
+
 # Executables
 *.exe
 *.out
 *.app
+
+# for MSC
+.vc/
+*.vcxproj.user
+*.tlog
+*.suo
+*.VC.db
+*.ipch
+
+# Others
+Binaries/
+packages/
+
