@@ -24,7 +24,7 @@
     #define STRLIB_API_EXPORT_FUNC     __declspec(dllexport)
     #define STRLIB_API_IMPORT_C_FUNC   extern "C" __declspec(dllimport)
     #define STRLIB_API_EXPORT_C_FUNC   extern "C" __declspec(dllexport)
-#elif defined(__GNUC__)
+#elif defined(__GNUC__) || defined(__clang__)
     #define STRLIB_API_IMPORT          __attribute__((visibility("default")))
     #define STRLIB_API_EXPORT          __attribute__((visibility("default")))
     #define STRLIB_API_IMPORT_FUNC     __attribute__((visibility("default")))
@@ -57,7 +57,7 @@
 //----------------------------------------------------------------------------------------------------
 // Types
 //----------------------------------------------------------------------------------------------------
-#if defined(WIN32) || defined(WIN64) || defined(__WIN32__)
+#if defined(_MSC_VER) || defined(__ICL)
     using sint8  = __int8;
     using uint8  = unsigned __int8;
     using sint16 = __int16;
@@ -85,6 +85,17 @@
     using char8_t = char;
 #endif
 
+#if defined(_MSC_VER) || defined(__ICL)
+    #define STRLIB_INLINE               inline
+    #define STRLIB_FORCE_INLINE         __forceinline
+#elif defined(__GNUC__) || defined(__clang__)
+    #define STRLIB_INLINE               inline
+    #define STRLIB_FORCE_INLINE         inline __attribute__((always_inline))
+#else
+    #define STRLIB_INLINE
+    #define STRLIB_FORCE_INLINE
+#endif
+
 
 //----------------------------------------------------------------------------------------------------
 // Functions
@@ -104,16 +115,32 @@ enum TextFormatFlags : uint32 {
 };
 
 /// @fn bool IsDigit(const char8_t c)
-STRLIB_API_FUNC bool IsDigit(const char8_t c);
+STRLIB_INLINE bool IsDigit(const char8_t c) {
+    return (u8'0' <= c) && (c <= u8'9');
+}
 
 /// @fn bool IsHex(const char8_t c)
-STRLIB_API_FUNC bool IsHex(const char8_t c);
+STRLIB_INLINE bool IsHex(const char8_t c) {
+    return ((u8'0' <= c) && (c <= u8'9'))
+        || ((u8'a' <= c) && (c <= u8'f'))
+        || ((u8'A' <= c) && (c <= u8'F'));
+}
 
 /// @fn char8_t ToUpper(const char8_t c);
-STRLIB_API_FUNC char8_t ToUpper(const char8_t c);
+STRLIB_INLINE char8_t ToUpper(const char8_t c) {
+    if ((u8'a' <= c) && (c <= u8'z')) {
+        return u8'A' + (c - u8'a');
+    }
+    return c;
+}
 
 /// @fn char8_t ToLower(const char8_t c);
-STRLIB_API_FUNC char8_t ToLower(const char8_t c);
+STRLIB_INLINE char8_t ToLower(const char8_t c) {
+    if ((u8'A' <= c) && (c <= u8'Z')) {
+        return u8'a' + (c - u8'A');
+    }
+    return c;
+}
 
 /// @fn sint32 UTF8StringToSInt32(const char8_t *string, size_t *readLen)
 /// @param[in]  string  UTF-8 string
@@ -205,6 +232,13 @@ STRLIB_API_FUNC size_t UTF8StringConcat(char8_t *dstBuffer, const size_t dstBuff
 /// @param[in] string Null terminated string
 /// @return Number of words
 STRLIB_API_FUNC size_t UTF8StringLength(const char8_t *string);
+
+/// @fn size_t UTF8StringCopy(char8_t *dstString, const size_t dstStringSize, const char8_t *srcString, const size_t count, const size_t offset)
+/// @param[out] destBuffer    Storage location for Output string
+/// @param[in]  dstBufferSize Maximum number of bytes to store
+/// @param[in]  string        UTF-8 string
+/// @return Number of bytes written
+STRLIB_API_FUNC size_t UTF8StringCopy(char8_t *dstString, const size_t dstStringSize, const char8_t *srcString);
 
 /// @fn size_t UTF8StringCopy(char8_t *dstString, const size_t dstStringSize, const char8_t *srcString, const size_t count, const size_t offset)
 /// @param[out] destBuffer    Storage location for Output string

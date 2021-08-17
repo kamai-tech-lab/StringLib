@@ -44,6 +44,10 @@ static const uint32 FLAGS_CHAR                 = (1u << 13u);
 static const uint32 FLAGS_SHORT                = (1u << 14u);
 static const uint32 FLAGS_LONG                 = (1u << 15u);
 static const uint32 FLAGS_LONG_LONG            = (1u << 16u);
+
+static const size_t DEFAULT_FLOAT_PRECISION = 6u;
+static const size_t LIMIT_FLOAT_PRECISION   = 12u;
+static const size_t SUPPORTED_MAX_FLOAT     = 1e12;
 } // namespace ""
 
 // Combining Diacritical Marks
@@ -58,34 +62,6 @@ bool IsCDMarks(const uint32 cp) {
 // Variation Selector
 bool IsVariationSelector(const uint32 cp) {
     return (0xe0100 <= cp && cp <= 0xe01ef);
-}
-
-/// @fn bool IsDigit(const char8_t c)
-STRLIB_API_FUNC bool IsDigit(const char8_t c) {
-    return (u8'0' <= c) && (c <= u8'9');
-}
-
-/// @fn bool IsHex(const char8_t c)
-STRLIB_API_FUNC bool IsHex(const char8_t c) {
-    return ((u8'0' <= c) && (c <= u8'9'))
-        || ((u8'a' <= c) && (c <= u8'f'))
-        || ((u8'A' <= c) && (c <= u8'F'));
-}
-
-/// @fn char8_t ToUpper(const char8_t c);
-STRLIB_API_FUNC char8_t ToUpper(const char8_t c) {
-    if ((u8'a' <= c) && (c <= u8'z')) {
-        return u8'A' + (c - u8'a');
-    }
-    return c;
-}
-
-/// @fn char8_t ToLower(const char8_t c);
-STRLIB_API_FUNC char8_t ToLower(const char8_t c) {
-    if ((u8'A' <= c) && (c <= u8'Z')) {
-        return u8'a' + (c - u8'A');
-    }
-    return c;
 }
 
 /// @fn sint32 UTF8StringToSInt32(const char8_t *string, size_t *readLen)
@@ -158,7 +134,7 @@ size_t PostIntToUTF8String(char8_t *dstBuffer, const size_t dstBufferSize, char8
     }
 
     if (requiredDestBufferSize > dstBufferSize) {
-        return 0;
+        return requiredDestBufferSize;
     }
 
     size_t written = 0;
@@ -220,8 +196,8 @@ size_t PostIntToUTF8String(char8_t *dstBuffer, const size_t dstBufferSize, char8
     return written;
 }
 
-size_t PostFloatToUTF8String(char8_t *dstBuffer, const size_t dstBufferSize, char8_t *base, size_t baseSize, char8_t *frac, size_t fracSize, char8_t *exp, size_t expSize, const bool negative, const size_t width, const size_t fracWidth, const size_t expWidth, const uint32 flags) {
-    const size_t bufferSize = baseSize + max(fracSize, fracWidth) + max(expSize, expWidth);
+size_t PostFloatToUTF8String(char8_t *dstBuffer, const size_t dstBufferSize, char8_t *base, size_t baseSize, char8_t *exp, size_t expSize, const bool negative, const size_t width, const size_t expWidth, const uint32 flags) {
+    const size_t bufferSize = baseSize + max(expSize, expWidth);
 
     size_t requiredDestBufferSize = max(bufferSize, width);
     if ((flags & FLAGS_NO_INSERT_TERMINATOR) == 0) {
@@ -233,7 +209,7 @@ size_t PostFloatToUTF8String(char8_t *dstBuffer, const size_t dstBufferSize, cha
     }
 
     if (requiredDestBufferSize > dstBufferSize) {
-        return 0;
+        return requiredDestBufferSize;
     }
 
     size_t written = 0;
@@ -248,20 +224,18 @@ size_t PostFloatToUTF8String(char8_t *dstBuffer, const size_t dstBufferSize, cha
             dstBuffer[written++] = base[baseSize - i];
         }
 
-        // Frac part
-        for (size_t i = 1; i <= fracSize; ++i) {
-            dstBuffer[written++] = frac[fracSize - i];
-        }
-        for (size_t i = fracSize; i < fracWidth; ++i) {
-            dstBuffer[written++] = u8'0';
-        }
-
         // Exp part
-        for (size_t i = 1; i <= expSize; ++i) {
-            dstBuffer[written++] = exp[expSize - i];
-        }
-        for (size_t i = expSize; i < expWidth; ++i) {
-            dstBuffer[written++] = u8'0';
+        if (0 < expWidth) {
+            // Add sign + 'e'
+            dstBuffer[written++] = exp[expSize - 1];
+            dstBuffer[written++] = exp[expSize - 2];
+
+            for (size_t i = expSize; i < expWidth; ++i) {
+                dstBuffer[written++] = u8'0';
+            }
+            for (size_t i = 3; i <= expSize; ++i) {
+                dstBuffer[written++] = exp[expSize - i];
+            }
         }
     } else if ((flags & FLAGS_ZEROPAD) != 0) {
         if (negative || (flags & (FLAGS_SIGN | FLAGS_SPACE)) != 0) {
@@ -294,24 +268,36 @@ size_t PostFloatToUTF8String(char8_t *dstBuffer, const size_t dstBufferSize, cha
             dstBuffer[written++] = base[baseSize - i];
         }
 
-        // Frac part
-        for (size_t i = 1; i <= fracSize; ++i) {
-            dstBuffer[written++] = frac[fracSize - i];
-        }
-        for (size_t i = fracSize; i < fracWidth; ++i) {
-            dstBuffer[written++] = u8'0';
+        // Exp part
+        if (0 < expWidth) {
+            // Add sign + 'e'
+            dstBuffer[written++] = exp[expSize - 1];
+            dstBuffer[written++] = exp[expSize - 2];
+
+            for (size_t i = expSize; i < expWidth; ++i) {
+                dstBuffer[written++] = u8'0';
+            }
+            for (size_t i = 3; i <= expSize; ++i) {
+                dstBuffer[written++] = exp[expSize - i];
+            }
         }
     } else if ((flags & FLAGS_LEFT) != 0) {
         for (size_t i = 1; i <= baseSize; ++i) {
             dstBuffer[written++] = base[baseSize - i];
         }
 
-        // Frac part
-        for (size_t i = 1; i <= fracSize; ++i) {
-            dstBuffer[written++] = frac[fracSize - i];
-        }
-        for (size_t i = fracSize; i < fracWidth; ++i) {
-            dstBuffer[written++] = u8'0';
+        // Exp part
+        if (0 < expWidth) {
+            // Add sign + 'e'
+            dstBuffer[written++] = exp[expSize - 1];
+            dstBuffer[written++] = exp[expSize - 2];
+
+            for (size_t i = expSize; i < expWidth; ++i) {
+                dstBuffer[written++] = u8'0';
+            }
+            for (size_t i = 3; i <= expSize; ++i) {
+                dstBuffer[written++] = exp[expSize - i];
+            }
         }
 
         // Add space
@@ -336,7 +322,7 @@ size_t PostFloatToUTF8String(char8_t *dstBuffer, const size_t dstBufferSize, cha
 /// @param[in]  flags         Format flags
 /// @return Number of bytes written
 STRLIB_API_FUNC size_t SInt32ToUTF8String(char8_t *dstBuffer, const size_t dstBufferSize, const sint32 value, const size_t width, const uint32 flags) {
-    const size_t BUFFER_SIZE = 40;
+    const size_t BUFFER_SIZE = 16;
     const bool negative = (value < 0);
     
     char8_t buffer[BUFFER_SIZE];
@@ -413,7 +399,7 @@ STRLIB_API_FUNC size_t SInt32ToUTF8String(char8_t *dstBuffer, const size_t dstBu
 /// @param[in]  flags         Format flags
 /// @return Number of bytes written
 STRLIB_API_FUNC size_t UInt32ToUTF8String(char8_t *dstBuffer, const size_t dstBufferSize, const uint32 value, const size_t width, const uint32 flags) {
-    const size_t BUFFER_SIZE = 40;
+    const size_t BUFFER_SIZE = 16;
 
     char8_t buffer[BUFFER_SIZE];
     size_t bufferSize = 0;
@@ -484,7 +470,7 @@ STRLIB_API_FUNC size_t UInt32ToUTF8String(char8_t *dstBuffer, const size_t dstBu
 /// @param[in]  flags         Format flags
 /// @return Number of bytes written
 STRLIB_API_FUNC size_t SInt64ToUTF8String(char8_t *dstBuffer, const size_t dstBufferSize, const sint64 value, const size_t width, const uint32 flags) {
-    const size_t BUFFER_SIZE = 72;
+    const size_t BUFFER_SIZE = 32;
     const bool negative = (value < 0);
 
     char8_t buffer[BUFFER_SIZE];
@@ -564,7 +550,7 @@ STRLIB_API_FUNC size_t SInt64ToUTF8String(char8_t *dstBuffer, const size_t dstBu
 /// @param[in]  flags         Format flags
 /// @return Number of bytes written
 STRLIB_API_FUNC size_t UInt64ToUTF8String(char8_t *dstBuffer, const size_t dstBufferSize, const uint64 value, const size_t width, const uint32 flags) {
-    const size_t BUFFER_SIZE = 72;
+    const size_t BUFFER_SIZE = 32;
 
     char8_t buffer[BUFFER_SIZE];
     size_t bufferSize = 0;
@@ -636,85 +622,7 @@ STRLIB_API_FUNC size_t UInt64ToUTF8String(char8_t *dstBuffer, const size_t dstBu
 /// @param[in]  flags         Format flags
 /// @return Number of bytes written
 STRLIB_API_FUNC size_t FloatToUTF8String(char8_t *dstBuffer, const size_t dstBufferSize, const float value, const size_t width, const size_t fracWidth, const uint32 flags) {
-    if ((flags & (FLAGS_HEX | FLAGS_OCT | FLAGS_BIN)) != 0) {
-        return SInt32ToUTF8String(dstBuffer, dstBufferSize, *reinterpret_cast<const sint32 *>(&value), width, flags);
-    }
-
-    const size_t INT_BUFFER_SIZE  = 32;
-    const size_t FRAC_BUFFER_SIZE = 32;
-    const bool negative = (value < 0.0f);
-
-    char8_t buffer[INT_BUFFER_SIZE];
-    size_t bufferSize = 0;
-
-    char8_t fracBuffer[FRAC_BUFFER_SIZE];
-    size_t fracBufferSize = 0;
-    
-    float absValue = negative ? -value : value;
-
-    if (value != value) {
-        if ((bufferSize + 3) < INT_BUFFER_SIZE) {
-            buffer[bufferSize++] = u8'n';
-            buffer[bufferSize++] = u8'a';
-            buffer[bufferSize++] = u8'n';
-        }
-    } else if (value < -FLT_MAX) {
-        if ((bufferSize + 4) < INT_BUFFER_SIZE) {
-            buffer[bufferSize++] = u8'f';
-            buffer[bufferSize++] = u8'n';
-            buffer[bufferSize++] = u8'i';
-            buffer[bufferSize++] = u8'-';
-        }
-    } else if (FLT_MAX < value) {
-        if ((bufferSize + 3) < INT_BUFFER_SIZE) {
-            buffer[bufferSize++] = u8'f';
-            buffer[bufferSize++] = u8'n';
-            buffer[bufferSize++] = u8'i';
-        }
-
-        if (bufferSize < INT_BUFFER_SIZE) {
-            if ((flags & FLAGS_SIGN) != 0) {
-                buffer[bufferSize++] = u8'+';
-            } else if ((flags & FLAGS_SPACE) != 0) {
-                buffer[bufferSize++] = u8' ';
-            }
-        }
-    } else {
-        uint32 intPart = static_cast<uint32>(absValue);
-            
-        // Integer part
-        do {
-            buffer[bufferSize++] = u8'0' + (intPart % 10);
-            intPart /= 10;
-        } while (0 != intPart && bufferSize < INT_BUFFER_SIZE);
-
-        // Sign
-        if (bufferSize < INT_BUFFER_SIZE) {
-            if (negative) {
-                buffer[bufferSize++] = u8'-';
-            } else if ((flags & FLAGS_SIGN) != 0) {
-                buffer[bufferSize++] = u8'+';
-            } else if ((flags & FLAGS_SPACE) != 0) {
-                buffer[bufferSize++] = u8' ';
-            }
-        }
-
-        uint32 fracPart = static_cast<uint32_t>((absValue - static_cast<uint32>(absValue)) * powf(10.0f, static_cast<float>(min(fracWidth, FRAC_BUFFER_SIZE - 1))) + 0.5f);
-
-        // Fractional part
-        if (0 < fracPart) {
-            do {
-                fracBuffer[fracBufferSize++] = u8'0' + (fracPart % 10);
-                fracPart /= 10;
-            } while (0 < fracPart && fracBufferSize < FRAC_BUFFER_SIZE);
-
-            if (fracBufferSize < FRAC_BUFFER_SIZE) {
-                fracBuffer[fracBufferSize++] = u8'.';
-            }
-        }
-    }
-
-    return PostFloatToUTF8String(dstBuffer, dstBufferSize, buffer, bufferSize, fracBuffer, fracBufferSize, nullptr, 0, negative, width, fracWidth, 0, flags);
+    return DoubleToUTF8String(dstBuffer, dstBufferSize, static_cast<const double>(value), width, fracWidth, flags);
 }
 
 /// @fn size_t DoubleToUTF8String(char8_t *dstBuffer, const size_t dstBufferSize, const double value, const size_t width, const size_t fracWidth, const uint32 flags)
@@ -730,16 +638,12 @@ STRLIB_API_FUNC size_t DoubleToUTF8String(char8_t *dstBuffer, const size_t dstBu
         return SInt64ToUTF8String(dstBuffer, dstBufferSize, *reinterpret_cast<const sint64 *>(&value), width, flags);
     }
 
-    const size_t INT_BUFFER_SIZE  = 64;
-    const size_t FRAC_BUFFER_SIZE = 64;
+    const size_t BUFFER_SIZE  = 64;
     const size_t EXP_BUFFER_SIZE  = 5;
     const bool negative = (value < 0.0f);
 
-    char8_t buffer[INT_BUFFER_SIZE];
+    char8_t buffer[BUFFER_SIZE];
     size_t bufferSize = 0;
-
-    char8_t fracBuffer[FRAC_BUFFER_SIZE];
-    size_t fracBufferSize = 0;
 
     char8_t expBuffer[EXP_BUFFER_SIZE];
     size_t expBufferSize = 0;
@@ -750,26 +654,26 @@ STRLIB_API_FUNC size_t DoubleToUTF8String(char8_t *dstBuffer, const size_t dstBu
     size_t expWidth = 0;
 
     if (value != value) {
-        if ((bufferSize + 3) < INT_BUFFER_SIZE) {
+        if ((bufferSize + 3) < BUFFER_SIZE) {
             buffer[bufferSize++] = u8'n';
             buffer[bufferSize++] = u8'a';
             buffer[bufferSize++] = u8'n';
         }
     } else if (value < -DBL_MAX) {
-        if ((bufferSize + 4) < INT_BUFFER_SIZE) {
+        if ((bufferSize + 4) < BUFFER_SIZE) {
             buffer[bufferSize++] = u8'f';
             buffer[bufferSize++] = u8'n';
             buffer[bufferSize++] = u8'i';
             buffer[bufferSize++] = u8'-';
         }
     } else if (DBL_MAX < value) {
-        if ((bufferSize + 3) < INT_BUFFER_SIZE) {
+        if ((bufferSize + 3) < BUFFER_SIZE) {
             buffer[bufferSize++] = u8'f';
             buffer[bufferSize++] = u8'n';
             buffer[bufferSize++] = u8'i';
         }
 
-        if (bufferSize < INT_BUFFER_SIZE) {
+        if (bufferSize < BUFFER_SIZE) {
             if ((flagValue & FLAGS_SIGN) != 0) {
                 buffer[bufferSize++] = u8'+';
             } else if ((flagValue & FLAGS_SPACE) != 0) {
@@ -779,6 +683,10 @@ STRLIB_API_FUNC size_t DoubleToUTF8String(char8_t *dstBuffer, const size_t dstBu
     } else {
         double absValue = negative ? -value : value;
         sint32 expValue = 0;
+
+        if (SUPPORTED_MAX_FLOAT < absValue) {
+            flagValue |= FLAGS_EXP;
+        }
 
         if ((flagValue & FLAGS_EXP) != 0) {
             // 以下の変換を使ってlog10を近似する
@@ -795,7 +703,7 @@ STRLIB_API_FUNC size_t DoubleToUTF8String(char8_t *dstBuffer, const size_t dstBu
             conv.f = absValue;
 
             // 入力値から指数部を取り出す
-            sint32 exp2Value = static_cast<sint32>((conv.u >> 52) & 0x7ffu - 1023);
+            sint32 exp2Value = static_cast<sint32>(((conv.u >> 52u) & 0x7ffu) - 1023);
             // d2相当の値を作るため、入力値から指数部を落として範囲を[1, 2)に調整した値を作る
             conv.u = (conv.u & ((1ull << 52u) - 1u)) | (1023ull << 52u);
             // 10進数の指数部を近似
@@ -858,21 +766,72 @@ STRLIB_API_FUNC size_t DoubleToUTF8String(char8_t *dstBuffer, const size_t dstBu
             }
 
             // rescale the float value
-            if (0 < expValue) {
+            if (expValue != 0) {
                 absValue /= conv.f;
             }
         }
 
-        uint64 intPart = static_cast<uint64>(absValue);
+        // If a precision greater than the maximum precision is specified, it is filled with zero.
+        while ((bufferSize < BUFFER_SIZE) && (LIMIT_FLOAT_PRECISION < precision)) {
+            buffer[bufferSize++] = u8'0';
+            --precision;
+        }
+
+        // 整数部を切り出す
+        uint64 wholePart = static_cast<uint64>(absValue);
+
+        uint64 pow = 1;
+        for (size_t i = 0; i < precision; ++i) {
+            pow *= 10;
+        }
+
+        double temp = (absValue - wholePart) * pow;
+
+        // 必用な精度分少数部を切り出す
+        uint64 fracPart = static_cast<uint64>(temp);
+
+        double tempDiff = temp - fracPart;
+        if (0.5 < tempDiff) {
+            ++fracPart; // 少数部を四捨五入
+
+            // 繰り上がり処理
+            if (fracPart >= pow) {
+                fracPart = 0;
+                ++wholePart;
+            }
+        } else if (tempDiff < 0.5) {
+            ;
+        } else if ((fracPart == 0u) || ((fracPart & 1u) != 0)) {
+            // 0.5だった場合、ゼロまたは最小桁が奇数の場合には繰り上げる
+            ++fracPart;
+        }
+
+        if (precision == 0) {
+            tempDiff = absValue - wholePart;
+            if ((0.5 < tempDiff) || (!(tempDiff < 0.5) && ((wholePart & 1u) != 0))) {
+                // 0.5だった場合、ゼロまたは最小桁が奇数の場合には繰り上げる
+                ++wholePart;
+            }
+        } else if (0 < fracPart) {
+            // Fractional part
+            do {
+                buffer[bufferSize++] = u8'0' + (fracPart % 10);
+                fracPart /= 10;
+            } while (0 != fracPart && bufferSize < BUFFER_SIZE);
+
+            if (bufferSize < BUFFER_SIZE) {
+                buffer[bufferSize++] = u8'.';
+            }
+        }
 
         // Integer part
         do {
-            buffer[bufferSize++] = u8'0' + (intPart % 10);
-            intPart /= 10;
-        } while (0 != intPart && bufferSize < INT_BUFFER_SIZE);
+            buffer[bufferSize++] = u8'0' + (wholePart % 10);
+            wholePart /= 10;
+        } while (0 != wholePart && bufferSize < BUFFER_SIZE);
 
-        // Sign
-        if (bufferSize < INT_BUFFER_SIZE) {
+        // Sign or Space
+        if (bufferSize < BUFFER_SIZE) {
             if (negative) {
                 buffer[bufferSize++] = u8'-';
             } else if ((flagValue & FLAGS_SIGN) != 0) {
@@ -882,39 +841,24 @@ STRLIB_API_FUNC size_t DoubleToUTF8String(char8_t *dstBuffer, const size_t dstBu
             }
         }
 
-        uint64 fracPart = static_cast<uint64_t>((absValue - static_cast<uint64>(absValue)) * pow(10.0, static_cast<double>(min(precision, FRAC_BUFFER_SIZE - 1))) + 0.5);
-
-        // Fractional part
-        if (0 < fracPart) {
-            do {
-                fracBuffer[fracBufferSize++] = u8'0' + (fracPart % 10);
-                fracPart /= 10;
-            } while (0 != fracPart && fracBufferSize < FRAC_BUFFER_SIZE);
-
-            if (fracBufferSize < FRAC_BUFFER_SIZE) {
-                fracBuffer[fracBufferSize++] = u8'.';
-            }
-        }
-
         // Exponent part
         if (0 < expWidth) {
+            bool negativeExp = expValue < 0;
+            if (negativeExp) {
+                expValue = -expValue;
+            }
+
             do {
                 expBuffer[expBufferSize++] = u8'0' + (expValue % 10);
                 expValue /= 10;
             } while (0 != expValue && expBufferSize < EXP_BUFFER_SIZE);
 
-            // Sign
-            if (expBufferSize < EXP_BUFFER_SIZE) {
-                buffer[bufferSize++] = negative ? u8'-' : u8'+';
-            }
-
-            if (expBufferSize < EXP_BUFFER_SIZE) {
-                expBuffer[expBufferSize++] = (flagValue & FLAGS_UPPERCASE) != 0 ? u8'E' : u8'e';
-            }
+            expBuffer[expBufferSize++] = negativeExp ? u8'-' : u8'+';
+            expBuffer[expBufferSize++] = (flagValue & FLAGS_UPPERCASE) != 0 ? u8'E' : u8'e';
         }
     }
 
-    return PostFloatToUTF8String(dstBuffer, dstBufferSize, buffer, bufferSize, fracBuffer, fracBufferSize, expBuffer, expBufferSize, negative, baseWidth, precision, expWidth, flags);
+    return PostFloatToUTF8String(dstBuffer, dstBufferSize, buffer, bufferSize, expBuffer, expBufferSize, negative, baseWidth, expWidth, flags);
 }
 
 /// @fn size_t size_t UTF8StringConcat(char8_t *dstBuffer, const size_t dstBufferSize, const char8_t *string)
@@ -1025,13 +969,13 @@ size_t UTF8StringConcat(char8_t *dstBuffer, const size_t dstBufferSize, const ch
         return requiredDstBufferSize;
     }
 
-    if (requiredDstBufferSize > dstBufferSize) {
-        return 0;
-    }
-
     size_t offset = 0;
     while (dstBuffer[offset] != u8'\0') {
         ++offset;
+    }
+
+    if ((dstBufferSize < offset) || ((dstBufferSize - offset) < requiredDstBufferSize)) {
+        return requiredDstBufferSize;
     }
 
     size_t written = 0;
@@ -1218,7 +1162,38 @@ std::pair<size_t, size_t> UTF8StringGetStartEnd(const char8_t *srcString, const 
 
     return { startIdx, endIdx };
 }
+} // namespace ""
+
+/// @fn size_t UTF8StringCopy(char8_t *dstString, const size_t dstStringSize, const char8_t *srcString, const size_t count, const size_t offset)
+/// @param[out] destBuffer    Storage location for Output string
+/// @param[in]  dstBufferSize Maximum number of bytes to store
+/// @param[in]  string        UTF-8 string
+/// @return Number of bytes written
+STRLIB_API_FUNC size_t UTF8StringCopy(char8_t *dstString, const size_t dstStringSize, const char8_t *srcString) {
+    if (srcString == nullptr) {
+        return 0;
+    }
+
+    size_t len = 0;
+    while (srcString[len++] != u8'\0');
+
+    if (dstString == nullptr) {
+        return len;
+    }
+
+    if (dstStringSize < len) {
+        return len;
+    }
+
+    size_t written = 0;
+
+    for (size_t i = 0; i < len; ++i) {
+        dstString[written++] = srcString[i];
+    }
+
+    return written;
 }
+
 /// @fn size_t UTF8StringCopy(char8_t *dstString, const size_t dstStringSize, const char8_t *srcString, const size_t count, const size_t offset)
 /// @param[out] destBuffer    Storage location for Output string
 /// @param[in]  dstBufferSize Maximum number of bytes to store
@@ -1244,7 +1219,7 @@ STRLIB_API_FUNC size_t UTF8StringCopy(char8_t *dstString, const size_t dstString
     }
 
     if (requiredDstStringSize > dstStringSize) {
-        return 0;
+        return requiredDstStringSize;
     }
 
     size_t written = 0;
@@ -1384,7 +1359,7 @@ STRLIB_API_FUNC size_t UTF8VStringFormat(char8_t *dstBuffer, const size_t dstBuf
     }
 
     // 出力先バッファの使用メモリ量測定
-    const bool measureMemory = dstBuffer == nullptr;
+    bool measureMemory = dstBuffer == nullptr;
 
     size_t idx = 0;
     size_t written = 0;
@@ -1392,8 +1367,7 @@ STRLIB_API_FUNC size_t UTF8VStringFormat(char8_t *dstBuffer, const size_t dstBuf
     while (format[idx] != u8'\0') {
         // Buffer empty
         if (dstBufferSize <= written) {
-            written = dstBufferSize - 1;
-            break;
+            measureMemory = true;
         }
 
         // Decode
@@ -1538,19 +1512,21 @@ STRLIB_API_FUNC size_t UTF8VStringFormat(char8_t *dstBuffer, const size_t dstBuf
         // Length field
         switch (format[idx]) {
         case u8'l':
-            flags = FLAGS_LONG;
+            flags |= FLAGS_LONG;
             idx++;
             if (format[idx] == u8'l') {
-                flags = FLAGS_LONG_LONG;
+                flags &= ~FLAGS_LONG;
+                flags |= FLAGS_LONG_LONG;
                 idx++;
             }
             break;
 
         case u8'h':
-            flags = FLAGS_SHORT;
+            flags |= FLAGS_SHORT;
             idx++;
             if (format[idx] == u8'h') {
-                flags = FLAGS_CHAR;
+                flags &= ~FLAGS_SHORT;
+                flags |= FLAGS_CHAR;
                 idx++;
             }
             break;
@@ -1582,7 +1558,8 @@ STRLIB_API_FUNC size_t UTF8VStringFormat(char8_t *dstBuffer, const size_t dstBuf
             || (format[idx] == u8'x')
             || (format[idx] == u8'X')
             || (format[idx] == u8'o')
-            || (format[idx] == u8'b')) {
+            || (format[idx] == u8'b')
+            || (format[idx] == u8'B')) {
             if ((format[idx] == u8'x') || (format[idx] == u8'X')) {
                 flags |= FLAGS_HEX;
                 if (format[idx] == u8'X') {
@@ -1590,8 +1567,11 @@ STRLIB_API_FUNC size_t UTF8VStringFormat(char8_t *dstBuffer, const size_t dstBuf
                 }
             } else if (format[idx] == u8'o') {
                 flags |= FLAGS_OCT;
-            } else if (format[idx] == u8'b') {
+            } else if ((format[idx] == u8'b') || (format[idx] == u8'B')) {
                 flags |= FLAGS_BIN;
+                if (format[idx] == u8'B') {
+                    flags |= FLAGS_UPPERCASE;
+                }
             }
 
             if ((flags & FLAGS_PRECISION) != 0) {
@@ -1656,7 +1636,13 @@ STRLIB_API_FUNC size_t UTF8VStringFormat(char8_t *dstBuffer, const size_t dstBuf
                 flags |= FLAGS_UPPERCASE;
             }
 
+            if ((flags & FLAGS_PRECISION) == 0) {
+                precision = DEFAULT_FLOAT_PRECISION;
+            }
+
+            // va_argではfloatは暗黙にdoubleに変換される（正しく取得できない
             double value = va_arg(va, double);
+
             if (measureMemory) {
                 written += DoubleToUTF8String(nullptr, 0, value, width, precision, flags);
             } else {
@@ -1676,6 +1662,9 @@ STRLIB_API_FUNC size_t UTF8VStringFormat(char8_t *dstBuffer, const size_t dstBuf
             if (format[idx] == u8'E' || format[idx] == u8'G') {
                 flags |= FLAGS_UPPERCASE;
             }
+            if ((flags & FLAGS_PRECISION) == 0) {
+                precision = DEFAULT_FLOAT_PRECISION;
+            }
 
             double value = va_arg(va, double);
             if (measureMemory) {
@@ -1686,25 +1675,39 @@ STRLIB_API_FUNC size_t UTF8VStringFormat(char8_t *dstBuffer, const size_t dstBuf
 
             ++idx;
         } else if (format[idx] == u8'c') {
-            const char8_t *chr = va_arg(va, char8_t *);
-            if (measureMemory) {
-                written += UTF8StringConcat(nullptr, 0, chr, 1, 1, flags);
+            const char8_t *str = va_arg(va, char8_t *);
+
+            auto [startIdx, endIdx] = UTF8StringGetStartEnd(str, 0, 1);
+            auto len = endIdx - startIdx;
+
+            if (measureMemory || ((dstBufferSize - written) < len)) {
+                written += len;
             } else {
-                written += UTF8StringConcat(&dstBuffer[written], dstBufferSize - written, chr, 1, 1, flags);
+                for (size_t i = startIdx; i < endIdx; ++i) {
+                    dstBuffer[written++] = str[i];
+                }
             }
 
             ++idx;
         } else if (format[idx] == u8's') {
             const char8_t *str = va_arg(va, char8_t*);
-            if (measureMemory) {
-                written += UTF8StringConcat(nullptr, 0, str, precision, width, flags);
+
+            size_t len = 0;
+            while (str[len] != u8'\0') {
+                len++;
+            }
+
+            if (measureMemory || ((dstBufferSize - written) < len)) {
+                written += len;
             } else {
-                written += UTF8StringConcat(&dstBuffer[written], dstBufferSize - written, str, precision, width, flags);
+                for (size_t i = 0; i < len; ++i) {
+                    dstBuffer[written++] = str[i];
+                }
             }
 
             ++idx;
         } else if (format[idx] == u8'p') {
-            flags |= FLAGS_HEX | FLAGS_ZEROPAD | FLAGS_UPPERCASE;
+            flags |= FLAGS_HASH | FLAGS_HEX | FLAGS_ZEROPAD;
 
             width = sizeof(void *) * 2u;
             if ((flags & FLAGS_HASH) != 0) {
@@ -1743,8 +1746,11 @@ STRLIB_API_FUNC size_t UTF8VStringFormat(char8_t *dstBuffer, const size_t dstBuf
     // Insert terminater
     if (measureMemory) {
         ++written;
-    } else {
+    } else if (written < dstBufferSize) {
         dstBuffer[written++] = u8'\0';
+    } else {
+        dstBuffer[0] = u8'\0';
+        ++written;
     }
 
     return written;
